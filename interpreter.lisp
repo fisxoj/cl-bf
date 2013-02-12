@@ -20,37 +20,42 @@
   ())
 
 (defun run (worm)
-  (declare (optimize speed space))
-  (setf (program-pointer worm) 0
-	(memory-pointer worm) 0
-	(tape worm) (new-tape))
-  (let ((loop-start-points '()))
-    (declare (type fixnum *memory-size*))
-;    with-output-to-string (stream)
-    (loop for step of-type fixnum from 0 by 1
-       until (= (the fixnum (program-pointer worm))
-		(the fixnum (length (the string (program worm)))))
+  (declare (optimize (speed 3) space (safety 0)))
+  (let ((loop-start-points '())
+	(program-length (length (the string (program worm))))
+	(memory-pointer 0)
+	(program-pointer 0)
+	(program (program worm))
+	(tape (new-tape))
+	(max-cell 256))
+    (declare (type fixnum *memory-size* program-length memory-pointer program-pointer max-cell)
+	     (type simple-string program)
+	     (type (simple-array (unsigned-byte 8) (*)) tape))
 
-       when *debug-mode*
-       do (format t "~%Step ~d: inst: ~a    p: ~d    m: ~d   mem: ~d    loops: ~a~%"
-		  step (program-instruction worm) (program-pointer worm) (memory-pointer worm) (memory worm) loop-start-points)
+    (loop for step fixnum from 0 by 1
+       until (= (the fixnum program-pointer)
+		program-length)
 
-       when (= step (the fixnum *max-worm-lifespan*))
-       do (error 'runaway-worm-error)
+;       when *debug-mode*
+;       do (format t "~%Step ~d: inst: ~a    p: ~d    m: ~d   mem: ~d    loops: ~a~%"
+;		  step (program-instruction worm) program-pointer memory-pointer (memory worm) loop-start-points)
        do
-	 (case (char (the simple-string (program worm)) (program-pointer worm))
-	   (#\> (incmodf (the fixnum (memory-pointer worm)) *memory-size*))
-	   (#\< (incmodf (the fixnum (memory-pointer worm)) *memory-size* -1))
-	   (#\+ (incmodf (the (unsigned-byte 8) (memory worm)) 256 1))
-	   (#\- (incmodf (the (unsigned-byte 8) (memory worm)) 256 -1))
-	   (#\. (princ (code-char (memory worm))))
-	   (#\, (setf (memory worm) (prog2 (princ "> ") (char-code (read-char)))))
-	   (#\[ (push (program-pointer worm) loop-start-points))
-	   (#\] (if (zerop (the fixnum (memory worm)))
-		    (pop loop-start-points)
-		    (if loop-start-points
-			;; We have a start point to return to
-			(setf (program-pointer worm) (first loop-start-points))
-			;; No start-points
-			(error "No start point for loop terminated at ~d" (program-pointer worm))))))
-    do (program-next-instruction worm))))
+	 (let ((c (char program program-pointer)))
+	   (declare (type character c))
+	   (cond
+	     ((char= c #\+) (setf (aref tape memory-pointer) (mod (1+ (aref tape memory-pointer)) max-cell)))
+	     ((char= c #\-) (setf (aref tape memory-pointer) (mod (1- (aref tape memory-pointer)) max-cell)))
+	     ((char= c #\>) (setf memory-pointer (mod (1+ memory-pointer) *memory-size*)))
+	     ((char= c #\<) (setf memory-pointer (mod (1- memory-pointer) *memory-size*)))
+	     ((char= c #\.) (princ (code-char (aref tape memory-pointer))))
+	     ((char= c #\,) (setf (aref tape memory-pointer)
+				  (prog2 (princ "> ") (char-code (read-char)))))
+	     ((char= c #\[) (push program-pointer loop-start-points))
+	     ((char= c #\]) (if (zerop (aref tape memory-pointer))
+				(pop loop-start-points)
+				(if loop-start-points
+				    ;; We have a start point to return to
+				    (setf program-pointer (first loop-start-points))
+				    ;; No start-points
+				    (error "No start point for loop terminated at ~d" program-pointer))))))
+       do (incf (the fixnum program-pointer)))))
