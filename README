@@ -1,0 +1,5 @@
+Create new programs with (spawn-worm str) where str is the program.
+
+All non interpreted characters will be ignored.
+
+Run programs by calling (run) on the object returned by (spawn-worm)
